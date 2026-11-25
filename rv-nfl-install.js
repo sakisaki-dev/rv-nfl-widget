@@ -1,10 +1,10 @@
 // Retro Vault NFL widget for Scriptable: paste this once into a new Scriptable script and name it "RV NFL".
-// On every refresh it downloads the latest widget code from github.com/sakisaki-dev/rv-nfl-widget (public; raw GitHub,
+// On every refresh it downloads the latest widget code from github.com/sakisaki-dev/RetroVault-NFL (public; raw GitHub,
 // then GitHub Pages) and keeps the last good copy for offline use, so the widget updates itself whenever new code or data is published.
 // Then add a Scriptable widget (any size, or a lock screen one) and choose this script. No key needed.
 
 // raw GitHub first, then the same file on GitHub Pages
-const URLS = ['https://raw.githubusercontent.com/sakisaki-dev/rv-nfl-widget/main/rv-nfl-widget.js', 'https://sakisaki-dev.github.io/rv-nfl-widget/rv-nfl-widget.js'];
+const URLS = ['https://raw.githubusercontent.com/sakisaki-dev/RetroVault-NFL/main/public/widgets/rv-nfl-widget.js', 'https://sakisaki-dev.github.io/RetroVault-NFL/widgets/rv-nfl-widget.js'];
 const fm = FileManager.local();
 const cached = fm.joinPath(fm.documentsDirectory(), 'rv-nfl-widget-cache.js');
 let code = null;

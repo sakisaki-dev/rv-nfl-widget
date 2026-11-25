@@ -1,3 +1,7 @@
+> **Moved and archived.** The RV NFL widget now lives in [sakisaki-dev/RetroVault-NFL](https://github.com/sakisaki-dev/RetroVault-NFL)
+> (`widget/`, `public/widgets/`; see its [widget README](https://github.com/sakisaki-dev/RetroVault-NFL/blob/main/widget/README.md)).
+> This repository is read-only. `rv-nfl-widget.js` here is a small forwarder so phones installed before the move keep working.
+
 <p align="center">
   <a href="#install"><img src="docs/readme/banner.svg" alt="RV NFL: a live NFL widget for the iPhone home screen, drawn in Retro Bowl pixel art" width="100%"></a>
 </p>
