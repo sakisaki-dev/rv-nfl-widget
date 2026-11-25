@@ -21,8 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       # standard library only: no pip install
@@ -52,9 +52,16 @@ jobs:
             git push origin HEAD:main
             echo "pushed=true" >> "$GITHUB_OUTPUT"
           fi
-      # a push made with GITHUB_TOKEN may not start the Pages build by itself: ask for one
-      - name: Rebuild GitHub Pages
+      # the push normally starts the Pages build by itself; ask for one only if none picked up this commit
+      - name: Make sure GitHub Pages rebuilds
         if: steps.commit.outputs.pushed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent || echo "Pages build request refused (Pages will still build on its own push trigger)"
+        run: |
+          sleep 60
+          latest="$(gh api "repos/${{ github.repository }}/pages/builds/latest" --jq .commit || true)"
+          if [ "$latest" = "$(git rev-parse HEAD)" ]; then
+            echo "Pages is building $latest"
+          else
+            gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent && echo "requested a Pages build"
+          fi
