@@ -475,7 +475,17 @@ async function loadBoard(maxAge) {
 async function loadSummary(id, maxAge) {
   return id ? getJson(ESPN + 'summary?event=' + id, 'espn-summary-' + id, maxAge) : null;
 }
-const prime = (g) => { const d = new Date(g.kick); return d.getHours() >= 19 || d.getHours() < 3; }; // an evening kickoff: local 7 pm or later
+// Primetime is judged on the league's own clock (US Eastern), not the phone's, so a trip west or abroad never turns
+// Sunday Night Football into an afternoon game: a kickoff at 7 pm Eastern or later (TNF, SNF, MNF, Saturday nights).
+const etOffsetH = (ms) => {
+  // US Eastern: EDT (UTC-4) from 2 am on the second Sunday in March to 2 am on the first Sunday in November, else EST (UTC-5)
+  const y = new Date(ms).getUTCFullYear();
+  const nthSunday = (month, n) => { const d = new Date(Date.UTC(y, month, 1)); const first = (7 - d.getUTCDay()) % 7; return Date.UTC(y, month, 1 + first + 7 * (n - 1)); };
+  const start = nthSunday(2, 2) + 7 * 3600e3, end = nthSunday(10, 1) + 6 * 3600e3;
+  return ms >= start && ms < end ? -4 : -5;
+};
+const etHour = (ms) => new Date(ms + etOffsetH(ms) * 3600e3).getUTCHours();
+const prime = (g) => { const hr = etHour(g.kick); return hr >= 19 || hr < 3; };
 
 // ---------- the mode ----------
 // The most recent final in the board is the club's game within 12 h of its end (kickoff + about 3.5 h)
@@ -2024,15 +2034,78 @@ async function build() {
   if (typeof RV_LOG === 'function') RV_LOG({ mode: ctx.mode, refreshMin: Math.round((w.refreshAfterDate.getTime() - NOWMS) / MIN), style: FAMILY });
   return w;
 }
+// ---------- offline / no key: the site's error screen (CrashScreen) in miniature ----------
+// A night stadium, a jumbotron with bulbs calling the play (TIMEOUT when there's no connection, FLAG when the key is
+// missing), the referee's ruling under it, and the yellow flag and the loose ball on the turf. Drawn from primitives only,
+// so it works with nothing cached.
+const OFF_BALL = ['.....OOOOOO.....', '...OOhhhhhhOO...', '.ObWbbbbbbbbWbO.', 'ObbWbbWbbWbbWbbO', 'ObbWbWWWWWWbWbbO', 'ObbWbbWbbWbbWbbO', '.ObWbbbbbbbbWbO.', '...OObbbbbbOO...', '.....OOOOOO.....'];
+const OFF_FLAG = ['......KK......', '.....KKKK.....', 'YYYYYyKKyYYYYY', 'YYYYYYyyYYYYYy', 'YyYYYYYYYYYYYy', 'YYyYYYYYYYYyYY', 'YYYyYYYYYYyYYY', 'YYYYYYYYYYYYYY', '.yyyyyyyyyyyy.'];
+const OFF_INK = { O: '#2a140a', b: '#9b5426', h: '#c27a3f', W: '#f6ecd9', Y: '#ffd21f', y: '#d9a300', K: '#3a2a0a' };
+function offArt(dc, rows, x, y, px) {
+  rows.forEach((row, ry) => [...row].forEach((c, rx) => { if (OFF_INK[c]) R(dc, x + rx * px, y + ry * px, px + 0.05, px + 0.05, new Color(OFF_INK[c])); }));
+}
 function offlineWidget() {
-  const sz = widgetSize(String(FAMILY).startsWith('accessory') ? 'small' : FAMILY);
-  const dc = backgroundCtx(sz.w, sz.h, 'night', 'MIN');
-  T(dc, 'NFL', PAD.side, sz.h / 2 - 20, sz.w - 28, 22, { font: dispI(22), color: C.gold });
-  const why = !TOKEN && !LAN_BASE ? 'Save the GitHub token in Scriptable: Keychain.set("rv-nfl-token", ...)' : 'No data yet. Connect to refresh.';
-  T(dc, why.slice(0, Math.floor((sz.w - 28) / 6)), PAD.side, sz.h / 2 + 4, sz.w - 28, 11, { color: C.dim });
-  if (why.length > Math.floor((sz.w - 28) / 6)) T(dc, why.slice(Math.floor((sz.w - 28) / 6)), PAD.side, sz.h / 2 + 18, sz.w - 28, 11, { color: C.dim });
-  finishShell(dc, sz.w, sz.h);
-  return newWidget(sz.w, sz.h, dc, null);
+  const noKey = !TOKEN && !LAN_BASE;
+  const word = noKey ? 'FLAG!' : 'TIMEOUT';
+  const ruling = noKey ? 'No key on this phone. In Scriptable, run Keychain.set("rv-nfl-token", …) once.' : 'No connection, and nothing saved yet. Play resumes when the phone is back online.';
+  const lock = String(FAMILY).startsWith('accessory');
+  if (lock) {
+    const wd = new ListWidget();
+    const t = wd.addText(noKey ? 'RV NFL · Flag: add the key' : 'RV NFL · Timeout: no signal');
+    t.font = Font.boldSystemFont(12); t.textColor = Color.white();
+    return wd;
+  }
+  const sz = widgetSize(FAMILY);
+  const { w, h } = sz;
+  const dc = backgroundCtx(w, h, 'night', 'MIN');
+  const small = FAMILY === 'small';
+  // floodlight towers in the corners
+  for (const tx of [PAD.side, w - PAD.side - 18]) {
+    R(dc, tx + 8, 22, 2, small ? 26 : 40, rgba('#3a4466', 1));
+    fillRounded(dc, tx, 14, 18, 9, 2, rgba('#20263a', 1));
+    for (let i = 0; i < 3; i++) R(dc, tx + 2 + i * 5.5, 16, 3.5, 3.5, rgba('#fff7d6', 0.95));
+  }
+  // turf band: stripes, yard lines, a chalk sideline
+  const turfH = Math.round(h * (small ? 0.3 : 0.27));
+  const ty = h - turfH;
+  for (let x = 0, i = 0; x < w; x += 22, i++) R(dc, x, ty, 22, turfH, new Color(i % 2 ? '#358a38' : '#2f7d32'));
+  for (let x = 11; x < w; x += 44) R(dc, x, ty, 1.5, turfH, rgba('#ffffff', 0.55));
+  R(dc, 0, ty, w, 2, rgba('#ffffff', 0.8));
+  // the flag and the loose ball on the turf
+  const px = small ? 2 : 3;
+  offArt(dc, OFF_FLAG, w * 0.24, ty + turfH * 0.38, px);
+  offArt(dc, OFF_BALL, w * 0.62, ty + turfH * 0.3, px);
+  // the jumbotron
+  const bw = Math.min(w - 2 * PAD.side - (small ? 0 : 40), 300), bh = small ? 64 : 84;
+  const bx = (w - bw) / 2, by = small ? 30 : 34;
+  fillRounded(dc, bx - 3, by - 3, bw + 6, bh + 6, 12, rgba('#2d3550', 1));
+  fillRounded(dc, bx, by, bw, bh, 10, rgba('#05070d', 1));
+  for (let x = bx + 10; x < bx + bw - 8; x += 9) R(dc, x, by + 5, 3, 3, rgba(HEX.amber, 0.9));
+  if (!small) pixCenter(dc, 'RETRO VAULT · LIVE', w / 2, by + 14, 1.2, HEX.dim);
+  const wsz = small ? 26 : 38;
+  T(dc, word, bx, by + (small ? 16 : 24), bw, wsz, { font: dispI(wsz), color: new Color(noKey ? '#ffd21f' : HEX.live), align: 'center' });
+  pixCenter(dc, noKey ? '4TH QTR  0:00  FLAG' : 'NO SIGNAL  0:00  TIMEOUT', w / 2, by + bh - 12, small ? 1 : 1.2, HEX.amber);
+  // the stands: rows of fans above the turf, in the club's colours and chalk (deterministic, like the site's crowd)
+  const crowdH = small ? 0 : Math.round(h * 0.1);
+  if (crowdH) {
+    const cy = ty - crowdH;
+    R(dc, 0, cy, w, crowdH, new Color('#1b2340'));
+    const ink = ['#4F2683', '#FFC62F', '#eef1f8', '#c8946b', '#7a4b2c', '#4F2683'];
+    for (let yy = cy + 3, r = 0; yy < ty - 3; yy += 5, r++) for (let xx = 2 + (r % 2) * 3, i = 0; xx < w - 2; xx += 6, i++) R(dc, xx, yy, 3, 3, new Color(ink[(i * 7 + r * 3) % ink.length]));
+  }
+  // the referee's ruling, wrapped by hand so it never runs off the panel
+  if (!small) {
+    const ry = by + bh + 12, rw = w - 2 * PAD.side - 12, tw = rw - 20;
+    const lines = []; let cur = '';
+    for (const word of ruling.split(' ')) { const t = cur ? cur + ' ' + word : word; if (estW(t, 11) > tw && cur) { lines.push(cur); cur = word; } else cur = t; }
+    if (cur) lines.push(cur);
+    const rh = 14 + lines.length * 15;
+    fillRounded(dc, PAD.side + 6, ry - 2, rw, rh + 12, 9, rgba('#080c1a', 0.7));
+    pix(dc, "REFEREE'S RULING", PAD.side + 16, ry + 6, 1, HEX.gold);
+    lines.forEach((ln, i) => T(dc, ln, PAD.side + 16, ry + 16 + i * 15, tw, 11, { color: C.chalk }));
+  }
+  finishShell(dc, w, h);
+  return newWidget(w, h, dc, null);
 }
 async function render(data, ctx) {
   const lock = String(FAMILY).startsWith('accessory');
