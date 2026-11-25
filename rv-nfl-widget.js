@@ -23,28 +23,20 @@
 // first one; otherwise they alternate.
 
 // ---------- where the data lives ----------
-// The private repo github.com/sakisaki-dev/rv-nfl-widget (scripts/nfl/widget_publish.sh pushes widget.json,
-// widget-sprites/ and widget-art/ to it), read through GitHub's contents API with a read-only fine-grained token kept in
-// Scriptable's Keychain: Keychain.set('rv-nfl-token', '<token>') once (steps in CLAUDE.md, "NFL widget"). No token or
-// no network: the last cached copy. LAN_BASE is an optional override for testing: `npm run nfl:dev` serves public/ at
-// :4174 on the LAN, e.g. 'http://192.168.1.243:4174/' (no token needed).
+// The public repo github.com/sakisaki-dev/rv-nfl-widget (scripts/nfl/widget_publish.sh pushes widget.json,
+// widget-sprites/ and widget-art/ to it), read straight from raw.githubusercontent.com: no key, no API rate limit.
+// No network: the last cached copy. LAN_BASE is an optional override for testing: `npm run nfl:dev` serves public/ at
+// :4174 on the LAN, e.g. 'http://192.168.1.243:4174/'.
 const REPO = 'sakisaki-dev/rv-nfl-widget';
 const LAN_BASE = '';
 const SITE = 'https://github.com/' + REPO;
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/';
-const TOKEN = (() => {
-  try { return Keychain.contains('rv-nfl-token') ? Keychain.get('rv-nfl-token') : null; } catch (e) { return null; }
-})();
+// Kept for the offline screen's wording: the repo is public, so a key is never needed
+const TOKEN = 'public';
 // widget.json names files by their site path ('data/nfl/widget-sprites/x.png'); the repo keeps them without 'data/nfl/'
 const repoPath = (p) => p.replace(/^data\/nfl\//, '');
-// A request for one of our own files, or null when there is no way to reach it (no token, no LAN base)
 function dataRequest(path) {
-  let r;
-  if (LAN_BASE) r = new Request(LAN_BASE + path);
-  else if (TOKEN) {
-    r = new Request(`https://api.github.com/repos/${REPO}/contents/${repoPath(path)}?ref=main`);
-    r.headers = { Authorization: 'Bearer ' + TOKEN, Accept: 'application/vnd.github.raw' };
-  } else return null;
+  const r = new Request(LAN_BASE ? LAN_BASE + path : `https://raw.githubusercontent.com/${REPO}/main/${repoPath(path)}`);
   r.timeoutInterval = 10;
   return r;
 }
