@@ -1,0 +1,60 @@
+name: Daily widget data
+
+# Rebuilds widget.json from the public nflverse data every morning, with nothing running on a Mac:
+# download the season's files, then injuries, depth charts, SZN, playoff odds and widget.json, and commit what changed.
+# Sprites and art are never drawn here; the ones in widget-sprites/ and widget-art/ are reused.
+on:
+  schedule:
+    - cron: "7 14 * * *"   # 6:07 am Pacific in winter (PST, UTC-8), 7:07 am in summer (PDT); Actions may start it a little late
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: daily-widget-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # standard library only: no pip install
+      - name: Download the season's nflverse files
+        run: python3 scripts/fetch.py
+      - name: Build widget.json
+        env:
+          TZ: America/Los_Angeles
+        run: |
+          cd scripts
+          python3 injuries.py
+          python3 depth_charts.py
+          python3 season_ovr.py
+          python3 playoff_odds.py
+          python3 widget_data.py
+      - name: Commit when something changed
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add widget.json
+          if git diff --cached --quiet; then
+            echo "widget data unchanged"
+            echo "pushed=false" >> "$GITHUB_OUTPUT"
+          else
+            git commit -q -m "Widget data: $(python3 -c "import json;d=json.load(open('widget.json'));print(f\"{d['season']} week {d['week']}\")") (daily)"
+            git push origin HEAD:main
+            echo "pushed=true" >> "$GITHUB_OUTPUT"
+          fi
+      # a push made with GITHUB_TOKEN may not start the Pages build by itself: ask for one
+      - name: Rebuild GitHub Pages
+        if: steps.commit.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" --silent || echo "Pages build request refused (Pages will still build on its own push trigger)"
