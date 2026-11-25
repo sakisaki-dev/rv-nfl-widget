@@ -11,8 +11,8 @@
 //   6  weekdays                       a rotating between-games view: the club card, the playoff race, the MVP race
 //   7  the offseason                  the season in the books
 //
-// Data: public/data/nfl/widget.json and its sprites and art (scripts/nfl/widget_data.py, run by `npm run nfl:rebuild`)
-// from the private repo below, live scores from ESPN. Both are cached, so it still draws offline.
+// Data: widget.json and its sprites and art (rebuilt daily on GitHub Actions in the repo below; scripts/nfl/widget_data.py
+// is the local copy), live scores from ESPN. Both are cached, so it still draws offline.
 //
 // Refresh (refreshAfterDate): every 5 minutes while the club plays, every 10 while other games are live, at kickoff
 // (waking up exactly then) before a game, once in the morning on weekdays. iOS treats the date as a hint, so a phone in
@@ -23,11 +23,13 @@
 // first one; otherwise they alternate.
 
 // ---------- where the data lives ----------
-// The public repo github.com/sakisaki-dev/rv-nfl-widget (scripts/nfl/widget_publish.sh pushes widget.json,
-// widget-sprites/ and widget-art/ to it), read straight from raw.githubusercontent.com: no key, no API rate limit.
-// No network: the last cached copy. LAN_BASE is an optional override for testing: `npm run nfl:dev` serves public/ at
-// :4174 on the LAN, e.g. 'http://192.168.1.243:4174/'.
+// The public repo github.com/sakisaki-dev/rv-nfl-widget: a GitHub Actions workflow there rebuilds widget.json every
+// morning from nflverse (nothing runs on a Mac); scripts/nfl/widget_publish.sh pushes the sprites, art and this code.
+// Read from raw.githubusercontent.com first, then the same files on GitHub Pages, then the last cached copy: no key,
+// no API rate limit. LAN_BASE is an optional override for testing: `npm run nfl:dev` serves public/ at :4174 on the
+// LAN, e.g. 'http://192.168.1.243:4174/'.
 const REPO = 'sakisaki-dev/rv-nfl-widget';
+const PAGES = 'https://sakisaki-dev.github.io/rv-nfl-widget/';
 const LAN_BASE = '';
 const SITE = 'https://github.com/' + REPO;
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/';
@@ -35,10 +37,10 @@ const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/';
 const TOKEN = 'public';
 // widget.json names files by their site path ('data/nfl/widget-sprites/x.png'); the repo keeps them without 'data/nfl/'
 const repoPath = (p) => p.replace(/^data\/nfl\//, '');
-function dataRequest(path) {
-  const r = new Request(LAN_BASE ? LAN_BASE + path : `https://raw.githubusercontent.com/${REPO}/main/${repoPath(path)}`);
-  r.timeoutInterval = 10;
-  return r;
+// Where one of our files can be fetched, in order: raw GitHub, then Pages
+function dataUrls(path) {
+  if (LAN_BASE) return [LAN_BASE + path];
+  return [`https://raw.githubusercontent.com/${REPO}/main/${repoPath(path)}`, PAGES + repoPath(path)];
 }
 
 // ---------- look ----------
@@ -142,11 +144,13 @@ if (!fm.fileExists(cacheDir)) fm.createDirectory(cacheDir, true);
 const safe = (s) => s.replace(/[^a-z0-9.]+/gi, '_').slice(-120);
 const cachePath = (k) => fm.joinPath(cacheDir, safe(k));
 const ageOf = (p) => { try { return NOWMS - fm.modificationDate(p).getTime(); } catch (e) { return Infinity; } };
-// src: a URL (ESPN) or {path} (our data). Returns a Request, or null.
-function makeRequest(src, timeout) {
-  const r = typeof src === 'string' ? new Request(src) : dataRequest(src.path);
-  if (r) r.timeoutInterval = timeout || 10;
-  return r;
+// src: a URL (ESPN) or {path} (our data: raw GitHub, then Pages). Returns the Requests to try in order.
+function makeRequests(src, timeout) {
+  return (typeof src === 'string' ? [src] : dataUrls(src.path)).map((u) => {
+    const r = new Request(u);
+    r.timeoutInterval = timeout || 10;
+    return r;
+  });
 }
 // JSON from the network, else the last good copy. maxAge (ms): a cached copy younger than that skips the network.
 async function getJson(src, key, maxAge = 0) {
@@ -154,19 +158,18 @@ async function getJson(src, key, maxAge = 0) {
   if (maxAge && fm.fileExists(p) && ageOf(p) < maxAge) {
     try { return JSON.parse(fm.readString(p)); } catch (e) { /* refetch */ }
   }
-  try {
-    const r = makeRequest(src);
-    if (!r) throw new Error('no source');
-    const text = await r.loadString();
-    if (r.response && r.response.statusCode >= 400) throw new Error('http');
-    if (/^\s*</.test(text)) throw new Error('html');
-    const data = JSON.parse(text);
-    try { fm.writeString(p, text); } catch (e) { /* best effort */ }
-    return data;
-  } catch (e) {
-    if (fm.fileExists(p)) { try { return JSON.parse(fm.readString(p)); } catch (e2) { /* none */ } }
-    return null;
+  for (const r of makeRequests(src)) {
+    try {
+      const text = await r.loadString();
+      if (r.response && r.response.statusCode >= 400) throw new Error('http');
+      if (/^\s*</.test(text)) throw new Error('html');
+      const data = JSON.parse(text);
+      try { fm.writeString(p, text); } catch (e) { /* best effort */ }
+      return data;
+    } catch (e) { /* the next source */ }
   }
+  if (fm.fileExists(p)) { try { return JSON.parse(fm.readString(p)); } catch (e2) { /* none */ } }
+  return null;
 }
 const IMGS = {};
 // An image from the network, kept in the cache (fresh for maxAge ms), else the stale copy, else null
@@ -176,11 +179,12 @@ async function getImage(src, key, maxAge = 864e5, minWidth = 8) {
   let img = null;
   if (fm.fileExists(p) && ageOf(p) < maxAge) { try { img = fm.readImage(p); } catch (e) { img = null; } }
   if (!img) {
-    try {
-      const r = makeRequest(src, 8);
-      const got = r ? await r.loadImage() : null;
-      if (got && got.size && got.size.width >= minWidth) { img = got; try { fm.writeImage(p, got); } catch (e) { /* best effort */ } }
-    } catch (e) { /* offline */ }
+    for (const r of makeRequests(src, 8)) {
+      try {
+        const got = await r.loadImage();
+        if (got && got.size && got.size.width >= minWidth) { img = got; try { fm.writeImage(p, got); } catch (e) { /* best effort */ } break; }
+      } catch (e) { /* the next source, else offline */ }
+    }
   }
   if (!img && fm.fileExists(p)) { try { img = fm.readImage(p); } catch (e) { img = null; } }
   return (IMGS[key] = img);
