@@ -31,7 +31,8 @@
 const REPO = 'sakisaki-dev/rv-nfl-widget';
 const PAGES = 'https://sakisaki-dev.github.io/rv-nfl-widget/';
 const LAN_BASE = '';
-const SITE = 'https://github.com/' + REPO;
+// Tap with no Parameter: the NFL edition's public site
+const SITE = 'https://sakisaki-dev.github.io/RetroVault-NFL/';
 const ESPN = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/';
 // Kept for the offline screen's wording: the repo is public, so a key is never needed
 const TOKEN = 'public';

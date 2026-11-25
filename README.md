@@ -259,7 +259,7 @@ flowchart LR
 
 | Parameter | Effect |
 |---|---|
-| *(empty)* | Tapping the widget opens this repository |
+| *(empty)* | Tapping the widget opens the NFL edition site, [sakisaki-dev.github.io/RetroVault-NFL](https://sakisaki-dev.github.io/RetroVault-NFL/) |
 | `bug` | Pins the live view to the broadcast score-bug style |
 | `classic` | Pins the live view to the classic style |
 | a Shortcut's name | Tapping runs that Shortcut |
